@@ -14,31 +14,22 @@ limitations under the License. */
 
 #pragma once
 
-// NOTE: workaround for issue: https://bugreports.qt.io/browse/QTBUG-22829
-#ifndef Q_MOC_RUN
+#include <string>
+#include <vector>
+
+#include <boost/optional.hpp>
+
 #include <ros/ros.h>
 #include <ros/time.h>
 #include <rviz/display.h>
 #include <sensor_msgs/NavSatFix.h>
+#include <tf2_ros/buffer.h>
 
-#include <OGRE/OgreTexture.h>
 #include <OGRE/OgreMaterial.h>
-#endif  //  Q_MOC_RUN
+#include <OGRE/OgreVector3.h>
 
-#include <QObject>
-#include <QtConcurrentRun>
-#include <QFuture>
-#include <utility>
-#include <boost/optional.hpp>
-#include <QByteArray>
-#include <QFile>
-#include <QNetworkRequest>
-
-#include <string>
-#include <vector>
-#include <memory>
-#include "TileCacheDelay.h"
-#include "OgreTile.h"
+#include "ogre_tile.h"
+#include "tile_cache_delay.h"
 
 namespace Ogre
 {
@@ -52,11 +43,8 @@ class IntProperty;
 class Property;
 class RosTopicProperty;
 class StringProperty;
-class TfFrameProperty;
-class EnumProperty;
 
 /**
- * @class AerialMapDisplay
  * @brief Displays a satellite map along the XY plane.
  */
 class AerialMapDisplay : public Display
@@ -67,7 +55,6 @@ public:
   ~AerialMapDisplay() override;
 
   // Overrides from Display
-  void fixedFrameChanged() override;
   void reset() override;
   void update(float, float) override;
 
@@ -78,7 +65,6 @@ protected Q_SLOTS:
   void updateTileUrl();
   void updateZoom();
   void updateBlocks();
-  void updateFrameConvention();
 
 protected:
   // overrides from Display
@@ -96,39 +82,52 @@ protected:
   /**
    * Load images to cache (non-blocking)
    */
-  void loadImagery();
+  void requestTileTextures();
 
   /**
-   * Create geometry
+   * Triggers texture update if the center-tile changed w.r.t. the current one
+   */
+  void updateCenterTile(sensor_msgs::NavSatFixConstPtr const& msg);
+
+  /**
+   * Generates the tile's render geometry and applies the requested textures
    */
   void assembleScene();
 
-  void clear();
-  void clearGeometry();
-  void createGeometry();
+  /**
+   * Triggers to (re-) assemble the scene
+   */
+  void triggerSceneAssembly();
 
   /**
-   * @brief Transforms from the robot's frame to the fixed frame.
-   *
-   * There are four relevant frames: The robot's frame, Rviz's fixed frame, the ENU/ NED/ NWU world fixed frame, and
-   * the tile frame.
-   *
-   * * The NavSatFix frame is a frame rigidly attached to the robot.
-   * * The fixed frame is set in Rviz by the user.
-   * * The ENU/ NED/ NWU world fixed frame is assumed to be called "map". This name is standardized, see
-   * http://www.ros.org/reps/rep-0105.html The map frame can be either ENU, NED, or NWU. The code only uses ENU
-   * internally and later rotates the frame into NED or NWU accordingly.
-   * * We assume that the tiles are in a frame where x points eastwards and y southwards. This frame is used by
-   * OSM and Google Maps, see https://developers.google.com/maps/documentation/javascript/coordinates
-   *
-   * Since the code works with ENU internally, the tiles' y-coordinate is flipped so that y points to north. Therefore
-   * we can align the tiles to north by putting them into the frame "map" with an orientation of
-   * Ogre::Quaternion::IDENTITY. We place the tiles indirectly into the "map" frame by using the "map" frame as the
-   * pseudo fixed frame.
-   *
-   * Thus we will end up with the tile mesh being aligned to the north regardless of which fixed frame is chosen.
+   * Destroys the scene-object and all children and their textures, along with the center-tile memory
    */
-  void transformAerialMap();
+  void clearAll();
+
+  /**
+   * Destroys the tile scene-objects
+   */
+  void destroyTileObjects();
+
+  /**
+   * Creates the tile scene-objects and their materials
+   */
+  void createTileObjects();
+
+  /**
+   * Transforms the tile objects into the map frame.
+   */
+  void transformTileToMapFrame();
+
+  /**
+   * Transforms the tile objects into the fixed frame.
+   */
+  void transformMapTileToFixedFrame();
+
+  /**
+   * Checks how may tiles were loaded successfully, and sets the status accordingly.
+   */
+  void checkRequestErrorRate();
 
   /**
    * Tile with associated Ogre data
@@ -143,48 +142,48 @@ protected:
       assert(!material.isNull());
     }
   };
+
+  /// the tile scene objects
   std::vector<MapObject> objects_;
 
-  ros::Subscriber coord_sub_;
+  /// the subscriber for the NavSatFix topic
+  ros::Subscriber navsat_fix_sub_;
 
   // properties
   RosTopicProperty* topic_property_;
   StringProperty* tile_url_property_;
   IntProperty* zoom_property_;
   IntProperty* blocks_property_;
-  FloatProperty* resolution_property_;
   FloatProperty* alpha_property_;
   Property* draw_under_property_;
-  EnumProperty* frame_convention_property_;
 
+  /// the alpha value of the tile's material
   float alpha_;
+  /// determines which render queue to use
   bool draw_under_;
+  /// the URL of the tile server to use
   std::string tile_url_;
+  /// the zoom to use (Mercator)
   int zoom_;
+  /// the number of tiles loaded in each direction around the center tile
   int blocks_;
 
   // tile management
-  bool dirty_;
-  bool received_msg_;
-  sensor_msgs::NavSatFix ref_fix_;
-  TileCacheDelay<OgreTile> tileCache_;
-  /// Last request()ed tile id
-  boost::optional<TileId> lastTileId_;
-  std::string lastFixedFrame_;
+  /// whether we need to re-query and re-assemble the tiles
+  bool dirty_{ false };
+  /// the last NavSatFix message that lead to updating the tiles
+  sensor_msgs::NavSatFixConstPtr ref_fix_{ nullptr };
+  /// caches tile images, hashed by their fetch URL
+  TileCacheDelay<OgreTile> tile_cache_;
+  /// Last request()ed tile id (which is the center tile)
+  boost::optional<TileId> center_tile_{ boost::none };
+  /// translation of the center-tile w.r.t. the map frame
+  Ogre::Vector3 t_centertile_map_{ Ogre::Vector3::ZERO };
+  /// the map frame, rigidly attached to the world with ENU convention - see https://www.ros.org/reps/rep-0105.html#map
+  std::string static const MAP_FRAME;
 
-  /**
-   * Calculate the tile width/ height in meter
-   */
-  double getTileWH()
-  {
-    // tile width/ height in pixel
-    // according to https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames
-    int constexpr tile_w_h_px = 256;
-
-    auto const resolution = zoomToResolution(ref_fix_.latitude, zoom_);
-    double const tile_w_h_m = tile_w_h_px * resolution;
-    return tile_w_h_m;
-  }
+  /// buffer for tf lookups not related to fixed-frame
+  std::shared_ptr<tf2_ros::Buffer const> tf_buffer_{ nullptr };
 };
 
 }  // namespace rviz

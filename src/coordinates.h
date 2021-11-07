@@ -15,11 +15,11 @@ limitations under the License. */
 #pragma once
 
 #include <cmath>
-#include <string>
 #include <stdexcept>
+#include <string>
 #include <tuple>
 
-#include "General.h"
+#include "mercator.h"
 
 /**
  * A WGS coordinate consisting of a latitude and longitude.
@@ -32,9 +32,10 @@ struct WGSCoordinate
 /**
  * A coordinate for identifying the position of a tile at a given zoom level
  *
- * @note Please use the non-generic TileCoordinate unless you have a specific reason not to.
+ * "Tile coordinates" use the coordinate system explained in
+ * https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames#X_and_Y
  *
- * @see fromWGSCoordinate
+ * @note Please use the non-generic TileCoordinate unless you have a specific reason not to.
  */
 template <typename NumericType = int>
 struct TileCoordinateGeneric
@@ -50,7 +51,7 @@ struct TileCoordinateGeneric
 template <typename NumericType = int>
 TileCoordinateGeneric<NumericType> fromWGSCoordinate(WGSCoordinate coord, int zoom)
 {
-  if (zoom > maxZoom)
+  if (zoom > MAX_ZOOM)
   {
     throw std::invalid_argument("Zoom level " + std::to_string(zoom) + " too high");
   }

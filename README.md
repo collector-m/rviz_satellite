@@ -4,6 +4,9 @@ Plugin for rviz for displaying satellite maps loaded from the internet.
 
 ![Alt text](.screenshot.png?raw=true "Example Image")
 
+In the near future this plugin will not add support for ROS 2.
+For an unofficial ROS 2 fork see [blacksoul000/rviz_satellite](https://github.com/blacksoul000/rviz_satellite/tree/dashing).
+
 In order to use rviz_satellite, add this package to your catkin workspace.
 
 ## Demo
@@ -56,7 +59,6 @@ Please refer to the respective terms of service and copyrights.
 - `Draw Under` will cause the map to be displayed below all other geometry.
 - `Zoom` is the zoom level of the map. Recommended values are 16-19, as anything smaller is _very_ low resolution. 22 is the current max.
 - `Blocks` number of adjacent blocks to load. rviz_satellite will load the central block, and this many blocks around the center. 8 is the current max.
-- `Frame Convention` is the convention for X/Y axes of the map. The default is maps XYZ to ENU, which is the default convention for libGeographic and [ROS](www.ros.org/reps/rep-0103.html).
 
 ## Support and Contributions
 
